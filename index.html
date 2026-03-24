@@ -91,7 +91,7 @@
             top: 60px;
             left: 10px;
             flex-direction: column;
-            max-height: calc(100vh - 80px);
+            max-height: calc(100vh - 150px);
             overflow-y: auto;
             scrollbar-width: none;
         }
@@ -121,10 +121,73 @@
         }
 
         .bottom {
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            border-radius: 0;
+            border-top: 1px solid var(--border);
+            padding: 8px 16px;
+            justify-content: flex-end;
             align-items: center;
+            gap: 12px;
+            transform: none;
+        }
+
+        .page-thumbnails {
+            display: flex;
+            gap: 10px;
+            flex: 1;
+            overflow-x: auto;
+            align-items: center;
+            scrollbar-width: none;
+        }
+
+        .page-thumbnails::-webkit-scrollbar {
+            display: none;
+        }
+
+        .page-thumb {
+            min-width: 80px;
+            height: 50px;
+            background: white;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            background-size: cover;
+            background-position: center;
+            transition: 0.2s;
+        }
+
+        .page-thumb:hover {
+            border-color: #95afc0;
+        }
+
+        .page-thumb.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(0, 151, 230, 0.3);
+        }
+
+        .page-thumb-num {
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        .page-thumb-title {
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 9px;
+            color: #555;
+            white-space: nowrap;
         }
 
         button {
@@ -315,9 +378,11 @@
         <button onclick="app.undo()" title="Undo (Ctrl+Z)">↩️</button>
         <button onclick="app.redo()" title="Redo (Ctrl+Y)">↪️</button>
         <div style="width:1px; background:var(--border); margin:4px"></div>
-        <button onclick="app.zoomIn()" title="Zoom In">🔍+</button>
         <button onclick="app.zoomOut()" title="Zoom Out">🔍-</button>
-        <button onclick="app.resetView()" title="Fit Screen">⛶</button>
+        <span id="zoom-val" style="font-size:14px; font-weight:600; min-width:45px; text-align:center;">100%</span>
+        <button onclick="app.zoomIn()" title="Zoom In">🔍+</button>
+        <button onclick="app.resetView()" title="Reset View">🔄</button>
+        <button onclick="app.toggleFullScreen()" title="Full Screen">⛶</button>
         <div style="width:1px; background:var(--border); margin:4px"></div>
         <button onclick="app.exportPNG()" title="Save PNG (Ctrl+S)">🖼️</button>
         <button onclick="app.exportPDF()" title="Save PDF">📄</button>
@@ -406,13 +471,14 @@
 
     <!-- Bottom Bar -->
     <div class="toolbar bottom" id="tb-bottom">
-        <button onclick="app.prevPage()" title="Previous Page">◀</button>
-        <span id="page-indicator" style="font-size:14px; margin:0 10px; font-weight:bold;">1 / 1</span>
-        <button onclick="app.nextPage()" title="Next Page">▶</button>
-        <div style="width:1px; background:var(--border); margin:0 8px; height:20px;"></div>
-        <button onclick="app.addPage()" title="Add Blank Page (N)">➕</button>
-        <button onclick="app.duplicatePage()" title="Duplicate Page">📑</button>
-        <button onclick="app.deletePage()" title="Delete Page">🗑️</button>
+        <div class="page-thumbnails" id="page-thumbnails"></div>
+        <span id="page-indicator" style="font-size:14px; margin:0 10px; font-weight:bold; white-space: nowrap;">1 /
+            1</span>
+        <button class="text-btn" onclick="app.addPage()" title="Add Blank Page (N)"
+            style="border: 1px solid var(--border);">+ New</button>
+        <button class="text-btn" onclick="app.duplicatePage()" title="Duplicate Page"
+            style="border: 1px solid var(--border);">📑 Copy</button>
+        <button onclick="app.deletePage()" title="Delete Page" style="border: 1px solid var(--border);">🗑️</button>
     </div>
 
     <!-- Widgets -->
@@ -505,6 +571,7 @@
                 if (saved) this.loadData(JSON.parse(saved));
 
                 this.pushHistory();
+                this.updateUI();
                 this.renderAll();
             },
 
@@ -970,11 +1037,45 @@
                 this.state.pres = !this.state.pres;
                 document.querySelectorAll('.toolbar').forEach(t => t.classList.toggle('hidden-pres', this.state.pres));
             },
-            resetView() { this.state.view = { x: 0, y: 0, z: 1 }; this.renderAll(); },
+            toggleFullScreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(e => console.error(e));
+                } else if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            },
+            resetView() { this.state.view = { x: 0, y: 0, z: 1 }; this.updateUI(); this.renderAll(); },
+            zoomIn() { this.state.view.z = Math.min(10, this.state.view.z * 1.2); this.syncTexts(); this.updateUI(); this.renderAll(); },
+            zoomOut() { this.state.view.z = Math.max(0.1, this.state.view.z * 0.8); this.syncTexts(); this.updateUI(); this.renderAll(); },
 
             // --- Page Nav ---
             updateUI() {
                 $('page-indicator').innerText = (this.state.curr + 1) + ' / ' + this.state.pages.length;
+                if ($('zoom-val')) $('zoom-val').innerText = Math.round(this.state.view.z * 100) + '%';
+
+                const thumbs = $('page-thumbnails');
+                if (thumbs) {
+                    thumbs.innerHTML = '';
+                    this.state.pages.forEach((p, i) => {
+                        const t = document.createElement('div');
+                        t.className = 'page-thumb' + (i === this.state.curr ? ' active' : '');
+                        t.onclick = () => { this.state.curr = i; this.updateUI(); this.renderAll(); };
+
+                        const title = document.createElement('span');
+                        title.className = 'page-thumb-title';
+                        title.innerText = 'Page ' + (i + 1) + (this.state.pageTitles && this.state.pageTitles[i] ? ' (' + this.state.pageTitles[i] + ')' : '');
+
+                        const num = document.createElement('span');
+                        num.className = 'page-thumb-num';
+                        num.innerText = (i + 1);
+
+                        t.appendChild(title); t.appendChild(num);
+                        thumbs.appendChild(t);
+                    });
+
+                    const activeThumb = thumbs.querySelector('.active');
+                    if (activeThumb) activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                }
             },
             addPage() { this.state.pages.push([]); this.state.texts.push([]); this.state.curr = this.state.pages.length - 1; this.state.history[this.state.curr] = []; this.pushHistory(); this.updateUI(); this.renderAll(); },
             duplicatePage() { this.state.pages.push(JSON.parse(JSON.stringify(this.objs()))); this.state.texts.push(JSON.parse(JSON.stringify(this.txts()))); this.state.curr = this.state.pages.length - 1; this.state.history[this.state.curr] = []; this.pushHistory(); this.updateUI(); this.renderAll(); },
